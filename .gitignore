@@ -1,0 +1,52 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test, lint, and type-check caches
+.pytest_cache/
+.pytest-tmp*/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.spec.tmp
+*.exe
+*.zip
+.packaging-logs/
+release-artifacts/
+
+
+# Local secrets and machine-specific config
+.env
+.env.*
+!.env.example
+*.code-workspace
+
+# Garmin personal data and derived private outputs
+data/raw/
+data/processed/
+data/samples/
+*.tcx
+!tests/fixtures/**/*.tcx
+*.fit
+*.gpx
+*.kml
+
+# Logs
+*.log
+logs/
+
+# OS metadata
+.DS_Store
+Thumbs.db

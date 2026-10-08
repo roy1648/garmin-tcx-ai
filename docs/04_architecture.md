@@ -217,6 +217,7 @@ CLI import-garminconnect
 - 不修改 parser、normalizer、privacy、summary、session、exporter 核心模組責任。
 - UI/EXE 已支援 Garmin Connect 選用功能（importer 與 keyring 憑證儲存），但真實登入與 Windows Credential Manager 的寫入及讀取不納入自動化測試或 CI，仍屬本機人工驗證範疇。
 - 不新增背景排程、資料庫、雲端同步、自動外部 AI API 上傳或 coaching/medical interpretation。
+  NAS 增量同步的例外見第 9 節與 `docs/11_nas_sync_scope_change.md`。
 
 
 ### 2.11 `credentials.py`
@@ -326,6 +327,12 @@ PR #9 與 MVP 不包含以下內容（但後續之 post-MVP 選用功能已支�
 - HR zone / time in zone。
 - 醫療等級解讀或疾病診斷。
 
+> [!NOTE]
+> 2026-10-07 起，NAS 本機增量同步為使用者批准的 post-MVP 例外
+> （Issue #32），其範圍與限制見 `docs/11_nas_sync_scope_change.md`。
+> 上述「自動化背景排程同步」在此例外下，僅限常駐 Docker 容器內以
+> Python 標準函式庫實作的定時同步，不得新增排程套件或對外連接埠。
+
 ## 8. Release Candidate Boundary
 
 The current release candidate keeps a strict boundary:
@@ -336,3 +343,36 @@ The current release candidate keeps a strict boundary:
 - UI helpers may validate paths, open folders, and support native picker convenience.
 - UI helpers must not replace parser, normalizer, exporter, session, or handoff logic.
 - Output contract remains owned by the pipeline and exporter/handoff modules.
+
+> [!NOTE]
+> 上述邊界適用於手動匯出 TCX 的 CLI 與 UI。NAS 增量同步是第二個平行
+> 用例，見第 9 節。
+
+## 9. NAS 增量同步架構（Issue #32）
+
+範圍、決策與限制以 `docs/11_nas_sync_scope_change.md` 為準，本節只
+描述元件關係。
+
+```text
+入口：每日排程、Telegram /sync、docker exec sync
+  -> sync_job.run_sync()
+       ├─ sync_config：環境變數 -> 不可變設定
+       ├─ sync_lock：同一時間只允許一個同步
+       ├─ sync_state：日期範圍與去重
+       ├─ garmin_auth：只用 token 登入
+       ├─ 下載器：下載範圍內的 TCX 到 data volume
+       └─ parser / normalizer / ai_text：解析全部原始 TCX
+  -> current/（output volume）
+```
+
+- `sync_job.run_sync()` 只回傳結構化結果，不輸出畫面、不結束程序。
+  CLI 轉成 exit code，常駐迴圈與 Telegram 依結果決定是否通知。
+- `pipeline.run_bundle()` 與 `sync_job` 是兩個平行用例，共用 parser、
+  normalizer 與 `ai_text`，不互相呼叫。`run_bundle()` 仍是手動匯出 CLI
+  與 UI 的唯一執行路徑。
+- 常駐程序為單執行緒迴圈：Telegram 長輪詢與每日排程在同一個迴圈內；
+  同步在同一執行緒內執行。
+- 網路請求（Garmin、Telegram）都位於可替換的介面之後，
+  單元測試不連到外部服務。
+- 兩個 volume：output（同步到雲端）、state（狀態、原始 TCX 與
+  `secrets/` 憑證）。state 不得位於 output 之下。

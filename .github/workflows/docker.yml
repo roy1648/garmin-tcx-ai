@@ -1,0 +1,38 @@
+name: Docker image (build and smoke test only)
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [Dockerfile, .dockerignore, pyproject.toml, uv.lock, src/**, .github/workflows/docker.yml]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build (amd64) for the smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: garmin-tcx-ai:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: |
+          docker run --rm garmin-tcx-ai:ci garmin-tcx-ai --help
+          if docker run --rm garmin-tcx-ai:ci python -c "import streamlit"; then
+            echo "UI dependencies must not be in the NAS image"; exit 1
+          fi
+          code=0
+          docker run --rm garmin-tcx-ai:ci garmin-tcx-ai sync || code=$?
+          test "$code" -eq 2

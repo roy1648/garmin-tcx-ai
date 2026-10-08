@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import argparse
+import getpass
+import os
 import sys
 from datetime import date
 from pathlib import Path
 
+from garmin_tcx_ai import garmin_auth
 from garmin_tcx_ai.ai_text import DENSITY_CHOICES
 from garmin_tcx_ai.importers import (
     GarminConnectImportConfig,
     download_tcx_activities,
 )
+from garmin_tcx_ai.sync_config import load_sync_config
+from garmin_tcx_ai.sync_job import EXIT_CODES, run_sync
 from garmin_tcx_ai.pipeline import (
     BundleRunConfig,
     BundleRunResult,
@@ -196,6 +201,83 @@ def _run_import_garminconnect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_garmin_login(args: argparse.Namespace) -> int:
+    """Save a Garmin Connect login as tokens, or check a saved one.
+
+    The password is read from an interactive terminal only, so it never
+    appears in shell history, scripts or logs.
+
+    Returns:
+        0 on success, 1 when the login failed, 2 for a usage problem.
+    """
+    token_dir_text = args.token_dir or os.environ.get(
+        garmin_auth.TOKEN_DIR_ENV
+    )
+    if not token_dir_text:
+        print(
+            "Error: set --token-dir or the "
+            f"{garmin_auth.TOKEN_DIR_ENV} environment variable.",
+            file=sys.stderr,
+        )
+        return 2
+    token_dir = Path(token_dir_text)
+
+    try:
+        if args.check:
+            garmin_auth.create_client_from_tokens(token_dir)
+            print("Saved Garmin login is valid.")
+            return 0
+
+        if not sys.stdin.isatty():
+            print(
+                "Error: garmin-login needs an interactive terminal.",
+                file=sys.stderr,
+            )
+            return 2
+        email = args.email or input("Garmin email: ")
+        password = getpass.getpass("Garmin password: ")
+        garmin_auth.login_with_credentials(
+            token_dir,
+            email=email,
+            password=password,
+            mfa_prompt=lambda: input("Garmin MFA code: "),
+        )
+        # Prove that the saved tokens work on their own.
+        garmin_auth.create_client_from_tokens(token_dir)
+    except garmin_auth.GarminAuthError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:  # optional dependency missing, etc.
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+
+    print("Garmin login saved. No password was stored.")
+    return 0
+
+
+def _run_sync(args: argparse.Namespace) -> int:
+    """Run one NAS sync with settings from environment variables.
+
+    Returns:
+        0 on success, 1 on failure, 2 for a usage problem, 3 when the
+        Garmin login must be renewed, 4 when a sync is already running.
+    """
+    try:
+        config = load_sync_config()
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    result = run_sync(config)
+    if result.outcome == "ok":
+        print(
+            f"Sync finished: {result.new_count} new, "
+            f"{result.activities} activities in total."
+        )
+    else:
+        print(f"Sync {result.outcome}: {result.message}", file=sys.stderr)
+    return EXIT_CODES[result.outcome]
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the CLI entry point for garmin-tcx-ai."""
     parser = argparse.ArgumentParser(
@@ -271,12 +353,48 @@ def main(argv: list[str] | None = None) -> int:
     )
     _add_output_options(import_parser)
 
+    login_parser = subparsers.add_parser(
+        "garmin-login",
+        help=(
+            "Log in to Garmin Connect once and save tokens "
+            "(the password is not stored)."
+        ),
+    )
+    login_parser.add_argument(
+        "--token-dir",
+        help=(
+            "Folder for the token file. Defaults to the "
+            f"{garmin_auth.TOKEN_DIR_ENV} environment variable."
+        ),
+    )
+    login_parser.add_argument(
+        "--email",
+        help="Garmin Connect email. If omitted, the CLI prompts for it.",
+    )
+    login_parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Only verify the saved login; do not ask for a password.",
+    )
+
+    subparsers.add_parser(
+        "sync",
+        help=(
+            "Download new Garmin activities and rewrite the current/ "
+            "folder (settings come from SYNC_* environment variables)."
+        ),
+    )
+
     args = parser.parse_args(argv)
 
     if args.command == "bundle":
         return _run_bundle(args)
     if args.command == "import-garminconnect":
         return _run_import_garminconnect(args)
+    if args.command == "garmin-login":
+        return _run_garmin_login(args)
+    if args.command == "sync":
+        return _run_sync(args)
 
     return 0
 

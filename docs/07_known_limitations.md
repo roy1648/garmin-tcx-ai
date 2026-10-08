@@ -4,7 +4,7 @@
 
 - Local-only tool.
 - No official Garmin Developer Program API (local unofficial import is supported).
-- No cloud sync.
+- No cloud sync built into this project (NAS-local sync output may be uploaded by third-party software; see `docs/11_nas_sync_scope_change.md`).
 - No automated/server-side login (local manual user login only).
 - No database.
 - No charts.

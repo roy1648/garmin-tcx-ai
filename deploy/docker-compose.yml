@@ -1,0 +1,24 @@
+# Container Manager project for the Synology DS720+.
+# Edit the three values marked CHANGE, then keep the version pinned.
+services:
+  garmin-sync:
+    image: ghcr.io/roy1648/garmin-tcx-ai:0.3.0-rc.1  # pinned; edit only to upgrade or roll back
+    pull_policy: always
+    restart: unless-stopped
+    user: "1026:100"  # CHANGE to the NAS user's PUID:PGID (folders must be owned by it)
+    environment:
+      TZ: Asia/Taipei
+      SYNC_TIMEZONE: Asia/Taipei
+      SYNC_OUTPUT_DIR: /output
+      SYNC_STATE_DIR: /state
+    volumes:
+      # Synced to Google Drive by the NAS sync tool. Holds current/ only.
+      - /volume1/docker/RunningData:/output  # CHANGE the NAS path
+      # Never synced: raw TCX (GPS), sync state, tokens. Back up encrypted.
+      - /volume1/docker/garmin-state:/state  # CHANGE the NAS path
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpus: 1.0

@@ -45,6 +45,10 @@ If behavior or data contracts are unclear, read `docs/` before editing.
   unless the user explicitly changes scope.
   - Approved Exception: Local-only Streamlit UI is allowed as a post-MVP usability layer.
   - Cloud dashboard, database, Garmin API login/sync, AI API upload, and AI coaching platform remain out of scope.
+  - Approved Exception (2026-10-07, Issue #32): NAS-local incremental sync that writes AI-readable files to a local `current/` folder.
+    Uploading that folder to Google Drive is done by third-party sync software on the NAS, not by this project.
+    Also allowed: an outbound-only Telegram bot (long polling) for phone trigger and notification.
+    Runs as a resident Docker container with a stdlib-only built-in scheduler. No Google API, OAuth, external scheduler package, exposed port, or database is allowed. See `docs/11_nas_sync_scope_change.md`.
 - GarminDB and python-garminconnect may be discussed in docs or roadmap,
   but must not be added as dependencies during MVP work.
 - Do not build a full AI coaching platform in MVP.

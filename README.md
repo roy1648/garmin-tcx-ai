@@ -58,6 +58,9 @@ uv run python -m garmin_tcx_ai.ui_exe_launcher
 或在 Windows 直接雙擊 `scripts\run_ui.cmd`。啟動器會自動挑一個空閒的
 port（8501 可用時優先），把網址印在視窗裡，並在伺服器就緒後自動開啟瀏覽器。
 
+核心依賴為空；`streamlit` 與 `keyring` 在 `ui` extra，`uv sync` 預設會安裝（dev 群組）。
+NAS 映像只需 `uv sync --no-dev --extra garminconnect`。
+
 若要使用 Garmin Connect 下載，請先安裝 optional dependency：
 
 ```powershell

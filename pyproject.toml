@@ -12,17 +12,26 @@ authors = [
     { name = "Jia-Long Chen" }
 ]
 license = "MIT"
-dependencies = [
-    "streamlit>=1.56",
-]
+dependencies = []
 
 
 [project.optional-dependencies]
 garminconnect = [
-    "garminconnect",
+    "garminconnect>=0.3.17",
     "curl_cffi",
+]
+ui = [
+    "streamlit>=1.56",
     "keyring",
 ]
+
+[dependency-groups]
+# Local development and the Windows UI get the UI extra by default;
+# the NAS image installs only the core and garminconnect extra.
+dev = ["garmin-tcx-ai[ui]"]
+
+[tool.uv]
+default-groups = ["dev"]
 
 [project.scripts]
 garmin-tcx-ai = "garmin_tcx_ai.cli:main"

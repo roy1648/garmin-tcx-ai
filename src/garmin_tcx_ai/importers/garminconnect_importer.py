@@ -44,6 +44,17 @@ class GarminConnectImportResult:
     error_message: str | None = None
 
 
+@dataclass(frozen=True)
+class DownloadOutcome:
+    """Counts and paths of one download loop; it never judges success."""
+
+    downloaded_count: int = 0
+    skipped_count: int = 0
+    failed_count: int = 0
+    tcx_paths: list[Path] = field(default_factory=list)
+    warning_messages: list[str] = field(default_factory=list)
+
+
 class GarminConnectDependencyError(RuntimeError):
     """Raised when the optional garminconnect dependency is unavailable."""
 
@@ -153,6 +164,76 @@ def _target_path(
 
 
 PasswordProvider = Callable[[str], str]
+
+
+def download_activity_files(
+    client: Any,
+    activities: list[dict[str, Any]],
+    download_dir: Path,
+    activity_type: str = "running",
+    overwrite: bool = False,
+) -> DownloadOutcome:
+    """Download the TCX file of each listed activity with *client*.
+
+    Files that already exist are skipped unless *overwrite* is set. A
+    failed download is counted and reported as a warning; the caller
+    decides whether that makes the whole run a failure.
+
+    Args:
+        client: A logged-in Garmin Connect client.
+        activities: Activity dicts from ``get_activities_by_date``.
+        download_dir: Folder for the TCX files; created when missing.
+        activity_type: Activity type used in the file names.
+        overwrite: Download again even when the file exists.
+
+    Returns:
+        Counts, local TCX paths and warnings.
+    """
+    download_dir = Path(download_dir)
+    download_dir.mkdir(parents=True, exist_ok=True)
+    tcx_format = _download_format(type(client))
+    downloaded = skipped = failed = 0
+    tcx_paths: list[Path] = []
+    warnings: list[str] = []
+
+    for activity in activities:
+        activity_id = _activity_id(activity)
+        if activity_id is None:
+            skipped += 1
+            warnings.append(
+                "Warning: Skipping Garmin Connect activity without "
+                "activityId."
+            )
+            continue
+
+        target = _target_path(
+            download_dir,
+            activity=activity,
+            activity_id=activity_id,
+            activity_type=activity_type,
+        )
+        if target.exists() and not overwrite:
+            skipped += 1
+            tcx_paths.append(target)
+            continue
+
+        try:
+            content = _tcx_bytes(
+                client.download_activity(activity_id, tcx_format)
+            )
+            if not content.strip():
+                raise ValueError("Downloaded TCX content is empty")
+            target.write_bytes(content)
+            downloaded += 1
+            tcx_paths.append(target)
+        except Exception as exc:
+            failed += 1
+            warnings.append(
+                "Warning: Failed to download Garmin Connect activity "
+                f"{activity_id}: {_redact_sensitive_message(exc)}"
+            )
+
+    return DownloadOutcome(downloaded, skipped, failed, tcx_paths, warnings)
 
 
 def download_tcx_activities(
@@ -268,44 +349,18 @@ def download_tcx_activities(
     if config.limit is not None:
         activities = activities[: config.limit]
 
-    download_dir.mkdir(parents=True, exist_ok=True)
-    tcx_format = _download_format(garmin_cls)
-
-    for activity in activities:
-        activity_id = _activity_id(activity)
-        if activity_id is None:
-            skipped_count += 1
-            warning_messages.append(
-                "Warning: Skipping Garmin Connect activity without "
-                "activityId."
-            )
-            continue
-
-        target = _target_path(
-            download_dir,
-            activity=activity,
-            activity_id=activity_id,
-            activity_type=config.activity_type,
-        )
-        if target.exists() and not config.overwrite:
-            skipped_count += 1
-            tcx_paths.append(target)
-            continue
-
-        try:
-            downloaded = client.download_activity(activity_id, tcx_format)
-            tcx_content = _tcx_bytes(downloaded)
-            if not tcx_content.strip():
-                raise ValueError("Downloaded TCX content is empty")
-            target.write_bytes(tcx_content)
-            downloaded_count += 1
-            tcx_paths.append(target)
-        except Exception as exc:
-            failed_count += 1
-            warning_messages.append(
-                "Warning: Failed to download Garmin Connect activity "
-                f"{activity_id}: {_redact_sensitive_message(exc)}"
-            )
+    outcome = download_activity_files(
+        client,
+        activities,
+        download_dir,
+        config.activity_type,
+        config.overwrite,
+    )
+    tcx_paths = outcome.tcx_paths
+    warning_messages.extend(outcome.warning_messages)
+    downloaded_count = outcome.downloaded_count
+    skipped_count = outcome.skipped_count
+    failed_count = outcome.failed_count
 
     success = bool(tcx_paths)
     error_message = None

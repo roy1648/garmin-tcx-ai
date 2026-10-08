@@ -17,6 +17,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
+      - name: Check lock file is up to date
+        run: uv lock --check
+
       - name: Create virtual environment (Python 3.12)
         run: uv venv --python 3.12
 
@@ -28,3 +31,8 @@ jobs:
 
       - name: Run ruff
         run: uv run python -m ruff check src tests --no-cache
+
+      - name: Check NAS install (no UI deps)
+        run: |
+          uv sync --no-dev --extra garminconnect
+          uv run --no-sync python -c "import garmin_tcx_ai.cli, garmin_tcx_ai.garmin_auth"
